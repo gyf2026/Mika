@@ -1,0 +1,49 @@
+name: APK compatibility check
+on:
+  push:
+    branches: [codex/feishu-apk-compat]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  signatures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - run: sdkmanager 'build-tools;35.0.0'
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 41842218248
+          name: Mika-Dev-Feishu-PR327
+          path: old
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 41955199389
+          name: Mika-Dev-Feishu-Windows-v0.1.36
+          path: new
+      - name: Compare public signer certificates
+        shell: python
+        run: |
+          import os, subprocess, re, json
+          from pathlib import Path
+          signer=Path(os.environ['ANDROID_HOME'])/'build-tools/35.0.0/apksigner'
+          def cert(directory):
+              apk=next(Path(directory).rglob('*.apk'))
+              result=subprocess.check_output([str(signer),'verify','--print-certs',str(apk)],text=True)
+              return re.search(r'Signer #1 certificate SHA-256 digest: (\S+)',result).group(1)
+          old=cert('old');new=cert('new')
+          result={'old_certificate':old,'new_certificate':new,'can_update_existing_dev':old==new}
+          Path('apk-compatibility.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps(result))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-compatibility
+          path: apk-compatibility.json
